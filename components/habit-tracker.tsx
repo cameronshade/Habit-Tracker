@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   DndContext,
   closestCenter,
@@ -68,7 +69,12 @@ export default function HabitTracker() {
   const [editingHabitName, setEditingHabitName] = useState("")
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [reorderMode, setReorderMode] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -783,15 +789,7 @@ export default function HabitTracker() {
               className="gap-2"
             >
               <Settings className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              title={viewMode === 'list' ? 'Switch to grid view' : 'Switch to list view'}
-            >
-              {viewMode === 'list' ? <LayoutGrid className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
+              Preferences
             </Button>
             <Button
               onClick={() => setReorderMode(!reorderMode)}
@@ -802,32 +800,58 @@ export default function HabitTracker() {
               <GripVertical className="h-4 w-4" />
               {reorderMode ? "Done" : "Reorder"}
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  File
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={manualSave}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={saveToFile}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {mounted && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    File
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={manualSave}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={saveToFile}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as 'list' | 'grid')} className="border rounded-md">
+              <ToggleGroupItem
+                value="list"
+                aria-label="List view"
+                className={cn(
+                  "gap-2",
+                  viewMode === 'list' && "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 hover:text-white dark:hover:text-zinc-900"
+                )}
+              >
+                <LayoutList className="h-4 w-4" />
+                List
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="grid"
+                aria-label="Grid view"
+                className={cn(
+                  "gap-2",
+                  viewMode === 'grid' && "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 hover:text-white dark:hover:text-zinc-900"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Grid
+              </ToggleGroupItem>
+            </ToggleGroup>
             <input
               ref={fileInputRef}
               type="file"
