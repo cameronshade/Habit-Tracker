@@ -140,7 +140,7 @@ export default function HabitTracker() {
     return () => clearTimeout(timer)
   }, [habits, completedColor, showStreak, viewMode])
 
-  // Generate dates for a full year (GitHub style)
+  // Generate dates for a full calendar year (Jan 1 - Dec 31)
   const generateDates = (habitStartDate: string, habitEndDate?: string) => {
     const dates: DayStatus[] = []
     const seenDates = new Set<string>()
@@ -148,15 +148,19 @@ export default function HabitTracker() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Start from 1 year ago
-    const oneYearAgo = new Date(today)
-    oneYearAgo.setFullYear(today.getFullYear() - 1)
-    oneYearAgo.setHours(0, 0, 0, 0)
+    // Start from January 1st of current year
+    const currentYear = today.getFullYear()
+    const jan1 = new Date(currentYear, 0, 1)
+    jan1.setHours(0, 0, 0, 0)
 
-    // Find the most recent Sunday before or on oneYearAgo (GitHub starts weeks on Sunday)
-    const dayOfWeek = oneYearAgo.getDay()
-    const startDate_calc = new Date(oneYearAgo)
-    startDate_calc.setDate(oneYearAgo.getDate() - dayOfWeek)
+    // End at December 31st of current year
+    const dec31 = new Date(currentYear, 11, 31)
+    dec31.setHours(0, 0, 0, 0)
+
+    // Find the most recent Sunday before or on Jan 1 (GitHub starts weeks on Sunday)
+    const dayOfWeek = jan1.getDay()
+    const startDate_calc = new Date(jan1)
+    startDate_calc.setDate(jan1.getDate() - dayOfWeek)
 
     // Parse the end date if provided
     let rangeStart: Date | null = null
@@ -177,11 +181,11 @@ export default function HabitTracker() {
       }
     }
 
-    // Generate all days from the start Sunday to today using date strings to avoid DST issues
+    // Generate all days from the start Sunday to Dec 31 using date strings to avoid DST issues
     let currentDate = new Date(startDate_calc)
     currentDate.setHours(12, 0, 0, 0) // Use noon to avoid DST issues
 
-    while (currentDate <= today) {
+    while (currentDate <= dec31) {
       const dateStr = currentDate.toISOString().split('T')[0]
 
       // Skip if we've already seen this date
@@ -240,11 +244,22 @@ export default function HabitTracker() {
   const toggleDay = (habitId: string, date: string) => {
     setHabits(habits.map(habit => {
       if (habit.id === habitId) {
-        return {
-          ...habit,
-          days: habit.days.map(day =>
-            day.date === date ? { ...day, completed: !day.completed } : day
-          )
+        const dateExists = habit.days.some(day => day.date === date)
+
+        if (dateExists) {
+          // Toggle existing date
+          return {
+            ...habit,
+            days: habit.days.map(day =>
+              day.date === date ? { ...day, completed: !day.completed } : day
+            )
+          }
+        } else {
+          // Add new date as completed
+          return {
+            ...habit,
+            days: [...habit.days, { date, completed: true }].sort((a, b) => a.date.localeCompare(b.date))
+          }
         }
       }
       return habit
@@ -371,16 +386,26 @@ export default function HabitTracker() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Start from today and count backwards
-    for (let i = habit.days.length - 1; i >= 0; i--) {
-      const day = habit.days[i]
+    // Create a map of completed dates for quick lookup
+    const completedDatesMap = new Map<string, boolean>()
+    habit.days.forEach(day => {
+      completedDatesMap.set(day.date, day.completed)
+    })
+
+    // Generate 2025 calendar and filter to dates up to today
+    const calendar2025 = generate2025Calendar()
+    const relevantDates = calendar2025.filter(day => {
       const dayDate = new Date(day.date)
       dayDate.setHours(0, 0, 0, 0)
+      return dayDate <= today
+    })
 
-      // Only count up to today
-      if (dayDate > today) continue
+    // Start from today and count backwards
+    for (let i = relevantDates.length - 1; i >= 0; i--) {
+      const day = relevantDates[i]
+      const isCompleted = completedDatesMap.get(day.date) || false
 
-      if (day.completed) {
+      if (isCompleted) {
         streak++
       } else {
         // Break the streak if we find an incomplete day
@@ -401,6 +426,39 @@ export default function HabitTracker() {
     })
 
     return earliest.date
+  }
+
+  // Generate fixed 2025 calendar year for display
+  const generate2025Calendar = () => {
+    const dates: DayStatus[] = []
+
+    // Start from January 1st, 2025
+    const jan1 = new Date(2025, 0, 1)
+    jan1.setHours(0, 0, 0, 0)
+
+    // End at December 31st, 2025
+    const dec31 = new Date(2025, 11, 31)
+    dec31.setHours(0, 0, 0, 0)
+
+    // Find the Sunday before or on Jan 1 (for proper week alignment)
+    const dayOfWeek = jan1.getDay()
+    const startDate = new Date(jan1)
+    startDate.setDate(jan1.getDate() - dayOfWeek)
+
+    // Generate from that Sunday to Dec 31
+    let currentDate = new Date(startDate)
+    currentDate.setHours(12, 0, 0, 0)
+
+    while (currentDate <= dec31) {
+      const dateStr = currentDate.toISOString().split('T')[0]
+      dates.push({
+        date: dateStr,
+        completed: false // Will be overridden when we check habit.days
+      })
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+
+    return dates
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -816,44 +874,52 @@ export default function HabitTracker() {
                 {/* Weeks grid */}
                 <div className="flex-1">
                   {/* Month labels */}
-                  <div className="relative flex gap-[3px] mb-1 h-4">
+                  <div className="flex gap-[3px] mb-1 h-4 w-full justify-between">
                     {(() => {
-                      const monthLabels: { month: string; weekIndex: number }[] = []
-                      let currentMonth = ''
+                      // Generate fixed 2025 calendar
+                      const calendar2025 = generate2025Calendar()
 
-                      // Group days into weeks and track month changes
-                      for (let i = 0; i < habit.days.length; i += 7) {
-                        const weekStart = new Date(habit.days[i].date)
-                        const month = format(weekStart, 'MMM')
-                        const weekIndex = Math.floor(i / 7)
-
-                        if (month !== currentMonth) {
-                          monthLabels.push({ month, weekIndex })
-                          currentMonth = month
-                        }
+                      // Group days into weeks (columns)
+                      const weeks: DayStatus[][] = []
+                      for (let i = 0; i < calendar2025.length; i += 7) {
+                        weeks.push(calendar2025.slice(i, i + 7))
                       }
 
-                      return monthLabels.map((label, idx) => (
-                        <div
-                          key={idx}
-                          className="text-[9px] text-muted-foreground absolute"
-                          style={{
-                            left: `${label.weekIndex * 13}px`
-                          }}
-                        >
-                          {label.month}
-                        </div>
-                      ))
+                      let currentMonth = ''
+
+                      return weeks.map((week, weekIdx) => {
+                        if (week.length === 0) return <div key={weekIdx} className="flex-1" />
+
+                        const weekStart = new Date(week[0].date)
+                        const month = format(weekStart, 'MMM')
+                        const showLabel = month !== currentMonth
+                        currentMonth = month
+
+                        return (
+                          <div key={weekIdx} className="flex-1 text-[9px] text-muted-foreground">
+                            {showLabel ? month : ''}
+                          </div>
+                        )
+                      })
                     })()}
                   </div>
 
                   {/* Contribution squares */}
                   <div className="flex gap-[3px] w-full justify-between">
                     {(() => {
+                      // Generate fixed 2025 calendar
+                      const calendar2025 = generate2025Calendar()
+
+                      // Create a map of habit's completed dates for quick lookup
+                      const completedDatesMap = new Map<string, boolean>()
+                      habit.days.forEach(day => {
+                        completedDatesMap.set(day.date, day.completed)
+                      })
+
                       // Group days into weeks (columns)
                       const weeks: DayStatus[][] = []
-                      for (let i = 0; i < habit.days.length; i += 7) {
-                        weeks.push(habit.days.slice(i, i + 7))
+                      for (let i = 0; i < calendar2025.length; i += 7) {
+                        weeks.push(calendar2025.slice(i, i + 7))
                       }
 
                       return weeks.map((week, weekIdx) => (
@@ -861,24 +927,25 @@ export default function HabitTracker() {
                           {week.map((day, dayIdx) => {
                             const date = new Date(day.date)
                             const isToday = day.date === new Date().toISOString().split('T')[0]
+                            const isCompleted = completedDatesMap.get(day.date) || false
 
                             return (
                               <button
                                 key={day.date}
                                 onClick={() => toggleDay(habit.id, day.date)}
-                                style={day.completed ? {
+                                style={isCompleted ? {
                                   backgroundColor: completedColor,
                                   borderColor: completedColor,
                                 } : undefined}
                                 className={`
                                   w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110 border
-                                  ${day.completed
+                                  ${isCompleted
                                     ? ''
                                     : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                                   }
                                   ${isToday ? 'ring-1 ring-zinc-400 dark:ring-zinc-600' : ''}
                                 `}
-                                title={`${date.toLocaleDateString()} - ${day.completed ? 'Completed' : 'Not completed'}`}
+                                title={`${date.toLocaleDateString()} - ${isCompleted ? 'Completed' : 'Not completed'}`}
                               />
                             )
                           })}
