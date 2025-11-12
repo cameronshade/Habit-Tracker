@@ -401,7 +401,7 @@ export default function HabitTracker() {
   }
 
   // Sortable Habit Card Component
-  const SortableHabitCard = ({ habit }: { habit: Habit }) => {
+  const SortableHabitCard = ({ habit, compact = false }: { habit: Habit; compact?: boolean }) => {
     const {
       attributes,
       listeners,
@@ -417,6 +417,120 @@ export default function HabitTracker() {
       opacity: isDragging ? 0.5 : 1,
     }
 
+    // Compact grid view
+    if (compact) {
+      return (
+        <Card
+          ref={setNodeRef}
+          style={style}
+          key={habit.id}
+          className={cn(
+            "group p-6 hover:shadow-md transition-all",
+            reorderMode && "cursor-grab active:cursor-grabbing",
+            isDragging && "shadow-2xl ring-2 ring-primary"
+          )}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start justify-between">
+              {reorderMode && (
+                <div {...attributes} {...listeners} className="mr-2 cursor-grab active:cursor-grabbing">
+                  <GripVertical className="h-5 w-5 text-muted-foreground" />
+                </div>
+              )}
+              {editingHabitId === habit.id ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingHabitName}
+                    onChange={(e) => setEditingHabitName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveHabitName(habit.id)
+                      if (e.key === 'Escape') cancelEditingHabit()
+                    }}
+                    className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
+                    autoFocus
+                  />
+                  <div className="flex gap-0.5 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => saveHabitName(habit.id)}
+                      className="h-7 w-7"
+                      title="Save"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={cancelEditingHabit}
+                      className="h-7 w-7"
+                      title="Cancel"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold">{habit.name}</h3>
+                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => startEditingHabit(habit.id, habit.name)}
+                      className="h-7 w-7"
+                      title="Edit name"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeHabit(habit.id)}
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
+              className={cn(
+                "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                showStreak[habit.id]
+                  ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                  : "hover:bg-muted/50"
+              )}
+              title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
+            >
+              <span className={cn(
+                "text-3xl font-bold",
+                showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+              )}>
+                {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {showStreak[habit.id]
+                  ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
+                  : getCompletedDays(habit) === 1 ? "day" : "days"}
+              </span>
+            </button>
+
+            {getEarliestCompletedDate(habit) && (
+              <p className="text-xs text-muted-foreground">
+                Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
+              </p>
+            )}
+          </div>
+        </Card>
+      )
+    }
+
+    // Full list view with flamegraph
     return (
       <Card
         ref={setNodeRef}
@@ -850,7 +964,7 @@ export default function HabitTracker() {
           <SortableContext
             items={habits.map(h => h.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!reorderMode || viewMode === 'grid'}
+            disabled={!reorderMode}
           >
             <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-4"}>
               {habits.length === 0 ? (
@@ -869,105 +983,9 @@ export default function HabitTracker() {
                 </div>
               </div>
             </Card>
-          ) : viewMode === 'grid' ? (
-            habits.map((habit) => (
-              <Card key={habit.id} className="group p-6 hover:shadow-md transition-all">
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-start justify-between">
-                    {editingHabitId === habit.id ? (
-                      <>
-                        <input
-                          type="text"
-                          value={editingHabitName}
-                          onChange={(e) => setEditingHabitName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveHabitName(habit.id)
-                            if (e.key === 'Escape') cancelEditingHabit()
-                          }}
-                          className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
-                          autoFocus
-                        />
-                        <div className="flex gap-0.5 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => saveHabitName(habit.id)}
-                            className="h-7 w-7"
-                            title="Save"
-                          >
-                            <Save className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={cancelEditingHabit}
-                            className="h-7 w-7"
-                            title="Cancel"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h3 className="text-lg font-semibold">{habit.name}</h3>
-                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => startEditingHabit(habit.id, habit.name)}
-                            className="h-7 w-7"
-                            title="Edit name"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeHabit(habit.id)}
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
-                    className={cn(
-                      "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
-                      showStreak[habit.id]
-                        ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
-                        : "hover:bg-muted/50"
-                    )}
-                    title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
-                  >
-                    <span className={cn(
-                      "text-3xl font-bold",
-                      showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
-                    )}>
-                      {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {showStreak[habit.id]
-                        ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
-                        : getCompletedDays(habit) === 1 ? "day" : "days"}
-                    </span>
-                  </button>
-
-                  {getEarliestCompletedDate(habit) && (
-                    <p className="text-xs text-muted-foreground">
-                      Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
-                    </p>
-                  )}
-                </div>
-              </Card>
-            ))
           ) : (
             habits.map((habit) => (
-              <SortableHabitCard key={habit.id} habit={habit} />
+              <SortableHabitCard key={habit.id} habit={habit} compact={viewMode === 'grid'} />
             ))
           )}
             </div>
