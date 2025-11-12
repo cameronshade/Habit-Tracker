@@ -8,7 +8,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid, GripVertical, FileText } from "lucide-react"
+import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid, GripVertical, FileText, CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -69,6 +69,9 @@ export default function HabitTracker() {
   const [editingHabitName, setEditingHabitName] = useState("")
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [reorderMode, setReorderMode] = useState(false)
+  const [checkInMode, setCheckInMode] = useState(false)
+  const [checkInSelections, setCheckInSelections] = useState<{[key: string]: boolean | null}>({})
+  const [checkInHasInteracted, setCheckInHasInteracted] = useState(false)
   const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -413,6 +416,72 @@ export default function HabitTracker() {
     }
   }
 
+  const startCheckIn = () => {
+    const today = new Date().toISOString().split('T')[0]
+    const initialSelections: {[key: string]: boolean | null} = {}
+
+    // Pre-populate with today's status
+    habits.forEach(habit => {
+      const todayStatus = habit.days.find(day => day.date === today)
+      initialSelections[habit.id] = todayStatus ? todayStatus.completed : null
+    })
+
+    setCheckInSelections(initialSelections)
+    setCheckInHasInteracted(false)
+    setCheckInMode(true)
+  }
+
+  const handleCheckInSelection = (habitId: string, completed: boolean) => {
+    setCheckInHasInteracted(true)
+    setCheckInSelections(prev => ({
+      ...prev,
+      [habitId]: completed
+    }))
+  }
+
+  const saveCheckIn = () => {
+    const today = new Date().toISOString().split('T')[0]
+
+    setHabits(habits.map(habit => {
+      const selection = checkInSelections[habit.id]
+      if (selection === null || selection === undefined) return habit
+
+      const todayExists = habit.days.some(day => day.date === today)
+
+      if (todayExists) {
+        // Update existing day
+        return {
+          ...habit,
+          days: habit.days.map(day =>
+            day.date === today ? { ...day, completed: selection } : day
+          )
+        }
+      } else {
+        // Add today's date to the days array
+        return {
+          ...habit,
+          days: [...habit.days, { date: today, completed: selection }].sort((a, b) => a.date.localeCompare(b.date))
+        }
+      }
+    }))
+
+    setCheckInMode(false)
+    setCheckInSelections({})
+  }
+
+  // Auto-save when all habits are checked AND user has interacted
+  useEffect(() => {
+    if (!checkInMode || !checkInHasInteracted) return
+
+    const allChecked = habits.every(habit =>
+      checkInSelections[habit.id] !== null && checkInSelections[habit.id] !== undefined
+    )
+
+    if (allChecked && habits.length > 0) {
+      saveCheckIn()
+    }
+  }, [checkInSelections, checkInMode, checkInHasInteracted])
+
   // Sortable Habit Card Component
   const SortableHabitCard = ({ habit, compact = false }: { habit: Habit; compact?: boolean }) => {
     const {
@@ -430,6 +499,8 @@ export default function HabitTracker() {
       opacity: isDragging ? 0.5 : 1,
     }
 
+    const selection = checkInSelections[habit.id]
+
     // Compact grid view
     if (compact) {
       return (
@@ -445,12 +516,14 @@ export default function HabitTracker() {
         >
           <div className="flex flex-col gap-4">
             <div className="flex items-start justify-between">
-              {reorderMode && (
+              {reorderMode && !checkInMode && (
                 <div {...attributes} {...listeners} className="mr-2 cursor-grab active:cursor-grabbing">
                   <GripVertical className="h-5 w-5 text-muted-foreground" />
                 </div>
               )}
-              {editingHabitId === habit.id ? (
+              {checkInMode ? (
+                <h3 className="text-lg font-semibold">{habit.name}</h3>
+              ) : editingHabitId === habit.id ? (
                 <>
                   <input
                     type="text"
@@ -510,33 +583,64 @@ export default function HabitTracker() {
               )}
             </div>
 
-            <button
-              onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
-              className={cn(
-                "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
-                showStreak[habit.id]
-                  ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
-                  : "hover:bg-muted/50"
-              )}
-              title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
-            >
-              <span className={cn(
-                "text-3xl font-bold",
-                showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
-              )}>
-                {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {showStreak[habit.id]
-                  ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
-                  : getCompletedDays(habit) === 1 ? "day" : "days"}
-              </span>
-            </button>
+            {checkInMode ? (
+              <div className="flex gap-3 justify-center items-center mt-2">
+                <Button
+                  onClick={() => handleCheckInSelection(habit.id, true)}
+                  variant={selection === true ? "default" : "outline"}
+                  size="lg"
+                  className={cn(
+                    "gap-2 flex-1",
+                    selection === true && "bg-green-600 hover:bg-green-700 text-white"
+                  )}
+                >
+                  <CheckCircle2 className="h-6 w-6" />
+                  Done
+                </Button>
+                <Button
+                  onClick={() => handleCheckInSelection(habit.id, false)}
+                  variant={selection === false ? "default" : "outline"}
+                  size="lg"
+                  className={cn(
+                    "gap-2 flex-1",
+                    selection === false && "bg-red-600 hover:bg-red-700 text-white"
+                  )}
+                >
+                  <XCircle className="h-6 w-6" />
+                  Skip
+                </Button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
+                  className={cn(
+                    "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                    showStreak[habit.id]
+                      ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                      : "hover:bg-muted/50"
+                  )}
+                  title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
+                >
+                  <span className={cn(
+                    "text-3xl font-bold",
+                    showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+                  )}>
+                    {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {showStreak[habit.id]
+                      ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
+                      : getCompletedDays(habit) === 1 ? "day" : "days"}
+                  </span>
+                </button>
 
-            {getEarliestCompletedDate(habit) && (
-              <p className="text-xs text-muted-foreground">
-                Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
-              </p>
+                {getEarliestCompletedDate(habit) && (
+                  <p className="text-xs text-muted-foreground">
+                    Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </Card>
@@ -550,15 +654,54 @@ export default function HabitTracker() {
         style={style}
         key={habit.id}
         className={cn(
-          "group p-6 hover:shadow-md transition-all",
+          "group p-6 hover:shadow-md transition-all relative",
           reorderMode && "cursor-grab active:cursor-grabbing",
           isDragging && "shadow-2xl ring-2 ring-primary"
         )}
       >
-        <div className="flex flex-col lg:flex-row gap-6">
+        {/* Check-in overlays */}
+        {checkInMode && (
+          <>
+            {/* Centered title overlay */}
+            <div className="absolute top-6 left-6 right-6 z-20">
+              <h3 className="text-xl font-semibold text-center">{habit.name}</h3>
+            </div>
+
+            {/* Centered buttons overlay */}
+            <div className="absolute inset-0 flex items-center justify-center gap-4 z-20">
+              <Button
+                onClick={() => handleCheckInSelection(habit.id, true)}
+                variant={selection === true ? "default" : "outline"}
+                size="lg"
+                className={cn(
+                  "gap-2 px-12 py-6 text-lg",
+                  selection === true && "bg-green-600 hover:bg-green-700 text-white"
+                )}
+              >
+                <CheckCircle2 className="h-6 w-6" />
+                Done
+              </Button>
+              <Button
+                onClick={() => handleCheckInSelection(habit.id, false)}
+                variant={selection === false ? "default" : "outline"}
+                size="lg"
+                className={cn(
+                  "gap-2 px-12 py-6 text-lg",
+                  selection === false && "bg-red-600 hover:bg-red-700 text-white"
+                )}
+              >
+                <XCircle className="h-6 w-6" />
+                Skip
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* Main content - always rendered, just blurred in check-in mode */}
+        <div className={cn("flex flex-col lg:flex-row gap-6", checkInMode && "blur-[3px] pointer-events-none")}>
           <div className="lg:w-56 flex-shrink-0">
             <div className="flex items-start justify-between mb-3">
-              {reorderMode && (
+              {reorderMode && !checkInMode && (
                 <div {...attributes} {...listeners} className="mr-2 cursor-grab active:cursor-grabbing">
                   <GripVertical className="h-5 w-5 text-muted-foreground" />
                 </div>
@@ -774,32 +917,55 @@ export default function HabitTracker() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              onClick={() => setShowNewHabitForm(!showNewHabitForm)}
-              size="sm"
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Habit
-            </Button>
-            <Button
-              onClick={() => setShowSettings(!showSettings)}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Settings className="h-4 w-4" />
-              Preferences
-            </Button>
-            <Button
-              onClick={() => setReorderMode(!reorderMode)}
-              variant={reorderMode ? "default" : "outline"}
-              size="sm"
-              className="gap-2"
-            >
-              <GripVertical className="h-4 w-4" />
-              {reorderMode ? "Done" : "Reorder"}
-            </Button>
+            {checkInMode ? (
+              <Button
+                onClick={saveCheckIn}
+                variant="default"
+                size="sm"
+                className="gap-2"
+              >
+                <Save className="h-4 w-4" />
+                Save & Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => setShowNewHabitForm(!showNewHabitForm)}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Habit
+                </Button>
+                <Button
+                  onClick={startCheckIn}
+                  variant="default"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Check-In
+                </Button>
+                <Button
+                  onClick={() => setShowSettings(!showSettings)}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  Preferences
+                </Button>
+                <Button
+                  onClick={() => setReorderMode(!reorderMode)}
+                  variant={reorderMode ? "default" : "outline"}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <GripVertical className="h-4 w-4" />
+                  {reorderMode ? "Done" : "Reorder"}
+                </Button>
+              </>
+            )}
             {mounted && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
