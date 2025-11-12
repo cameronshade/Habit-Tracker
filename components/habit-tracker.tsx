@@ -8,7 +8,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, RotateCcw, Settings, Save, Plus, X } from "lucide-react"
+import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -40,6 +40,8 @@ export default function HabitTracker() {
   const [showSettings, setShowSettings] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [showNewHabitForm, setShowNewHabitForm] = useState(false)
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null)
+  const [editingHabitName, setEditingHabitName] = useState("")
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -196,16 +198,30 @@ export default function HabitTracker() {
     }))
   }
 
-  const resetHabit = (habitId: string) => {
+  const startEditingHabit = (habitId: string, currentName: string) => {
+    setEditingHabitId(habitId)
+    setEditingHabitName(currentName)
+  }
+
+  const saveHabitName = (habitId: string) => {
+    if (!editingHabitName.trim()) return
+
     setHabits(habits.map(habit => {
       if (habit.id === habitId) {
         return {
           ...habit,
-          days: habit.days.map(day => ({ ...day, completed: false }))
+          name: editingHabitName.trim()
         }
       }
       return habit
     }))
+    setEditingHabitId(null)
+    setEditingHabitName("")
+  }
+
+  const cancelEditingHabit = () => {
+    setEditingHabitId(null)
+    setEditingHabitName("")
   }
 
   const manualSave = () => {
@@ -520,35 +536,73 @@ export default function HabitTracker() {
                 <div className="flex flex-col lg:flex-row gap-6">
                   <div className="lg:w-56 flex-shrink-0">
                     <div className="flex items-start justify-between mb-3">
-                      <h3 className="text-xl font-semibold">{habit.name}</h3>
-                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => resetHabit(habit.id)}
-                          className="h-7 w-7"
-                          title="Reset all days"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeHabit(habit.id)}
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                      {editingHabitId === habit.id ? (
+                        <>
+                          <input
+                            type="text"
+                            value={editingHabitName}
+                            onChange={(e) => setEditingHabitName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveHabitName(habit.id)
+                              if (e.key === 'Escape') cancelEditingHabit()
+                            }}
+                            className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
+                            autoFocus
+                          />
+                          <div className="flex gap-0.5 flex-shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => saveHabitName(habit.id)}
+                              className="h-7 w-7"
+                              title="Save"
+                            >
+                              <Save className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={cancelEditingHabit}
+                              className="h-7 w-7"
+                              title="Cancel"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <h3 className="text-xl font-semibold">{habit.name}</h3>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => startEditingHabit(habit.id, habit.name)}
+                              className="h-7 w-7"
+                              title="Edit name"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeHabit(habit.id)}
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="space-y-2">
                       <button
                         onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
                         className={cn(
-                          "flex items-baseline gap-2 px-3 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                          "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
                           showStreak[habit.id]
-                            ? "bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                            ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
                             : "hover:bg-muted/50"
                         )}
                         title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
@@ -560,7 +614,9 @@ export default function HabitTracker() {
                           {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          {showStreak[habit.id] ? "day streak" : "days"}
+                          {showStreak[habit.id]
+                            ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
+                            : getCompletedDays(habit) === 1 ? "day" : "days"}
                         </span>
                       </button>
 
