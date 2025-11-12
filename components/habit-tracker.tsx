@@ -8,7 +8,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil } from "lucide-react"
+import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -29,6 +29,7 @@ interface HabitData {
   habits: Habit[]
   completedColor?: string
   showStreak?: {[key: string]: boolean}
+  viewMode?: 'list' | 'grid'
 }
 
 export default function HabitTracker() {
@@ -42,50 +43,61 @@ export default function HabitTracker() {
   const [showNewHabitForm, setShowNewHabitForm] = useState(false)
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null)
   const [editingHabitName, setEditingHabitName] = useState("")
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
 
-  // Load data from localStorage on mount
+  // Load data from OPFS on mount
   useEffect(() => {
-    const saved = localStorage.getItem('habit-tracker-data')
-    const savedColor = localStorage.getItem('habit-tracker-color')
-    const savedShowStreak = localStorage.getItem('habit-tracker-showStreak')
-
-    if (saved) {
+    const loadData = async () => {
       try {
-        const data = JSON.parse(saved) as HabitData
-        setHabits(data.habits)
+        const root = await navigator.storage.getDirectory()
+        const fileHandle = await root.getFileHandle('habit-tracker-data.json', { create: false })
+        const file = await fileHandle.getFile()
+        const text = await file.text()
+        const data = JSON.parse(text) as HabitData
+
+        setHabits(data.habits || [])
+        setCompletedColor(data.completedColor || "#18181b")
+        setShowStreak(data.showStreak || {})
+        setViewMode(data.viewMode || 'list')
+
+        console.log('Loaded data from persistent storage')
       } catch (error) {
-        console.error('Error loading saved data:', error)
+        console.log('No persistent data found, starting fresh')
       }
     }
 
-    if (savedColor) {
-      setCompletedColor(savedColor)
-    }
-
-    if (savedShowStreak) {
-      try {
-        setShowStreak(JSON.parse(savedShowStreak))
-      } catch (error) {
-        console.error('Error loading showStreak:', error)
-      }
-    }
+    loadData()
   }, [])
 
-  // Auto-save to localStorage when habits or color changes
+  // Auto-save to OPFS when data changes (debounced)
   useEffect(() => {
-    if (habits.length > 0) {
-      localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
-      setLastSaved(new Date())
+    if (habits.length === 0) return
+
+    const saveData = async () => {
+      try {
+        const root = await navigator.storage.getDirectory()
+        const fileHandle = await root.getFileHandle('habit-tracker-data.json', { create: true })
+        const writable = await fileHandle.createWritable()
+
+        const data: HabitData = {
+          habits,
+          completedColor,
+          showStreak,
+          viewMode
+        }
+
+        await writable.write(JSON.stringify(data, null, 2))
+        await writable.close()
+        setLastSaved(new Date())
+      } catch (error) {
+        console.error('Error auto-saving:', error)
+      }
     }
-  }, [habits])
 
-  useEffect(() => {
-    localStorage.setItem('habit-tracker-color', completedColor)
-  }, [completedColor])
-
-  useEffect(() => {
-    localStorage.setItem('habit-tracker-showStreak', JSON.stringify(showStreak))
-  }, [showStreak])
+    // Debounce: wait 1 second after last change before saving
+    const timer = setTimeout(saveData, 1000)
+    return () => clearTimeout(timer)
+  }, [habits, completedColor, showStreak, viewMode])
 
   // Generate dates for a full year (GitHub style)
   const generateDates = (habitStartDate: string, habitEndDate?: string) => {
@@ -224,18 +236,35 @@ export default function HabitTracker() {
     setEditingHabitName("")
   }
 
-  const manualSave = () => {
-    localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
-    localStorage.setItem('habit-tracker-color', completedColor)
-    localStorage.setItem('habit-tracker-showStreak', JSON.stringify(showStreak))
-    setLastSaved(new Date())
+  const manualSave = async () => {
+    try {
+      const root = await navigator.storage.getDirectory()
+      const fileHandle = await root.getFileHandle('habit-tracker-data.json', { create: true })
+      const writable = await fileHandle.createWritable()
+
+      const data: HabitData = {
+        habits,
+        completedColor,
+        showStreak,
+        viewMode
+      }
+
+      await writable.write(JSON.stringify(data, null, 2))
+      await writable.close()
+      setLastSaved(new Date())
+      console.log('Manual save complete')
+    } catch (error) {
+      console.error('Error saving:', error)
+      alert('Error saving data')
+    }
   }
 
   const saveToFile = () => {
     const data: HabitData = {
       habits,
       completedColor,
-      showStreak
+      showStreak,
+      viewMode
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -253,7 +282,7 @@ export default function HabitTracker() {
     if (!file) return
 
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result as string) as HabitData
         setHabits(data.habits)
@@ -264,6 +293,21 @@ export default function HabitTracker() {
         }
         if (data.showStreak) {
           setShowStreak(data.showStreak)
+        }
+        if (data.viewMode) {
+          setViewMode(data.viewMode)
+        }
+
+        // Save imported data to OPFS
+        try {
+          const root = await navigator.storage.getDirectory()
+          const fileHandle = await root.getFileHandle('habit-tracker-data.json', { create: true })
+          const writable = await fileHandle.createWritable()
+          await writable.write(JSON.stringify(data, null, 2))
+          await writable.close()
+          console.log('Imported data saved to persistent storage')
+        } catch (opfsError) {
+          console.error('Error saving to OPFS:', opfsError)
         }
 
         // Reset input so the same file can be selected again
@@ -351,6 +395,15 @@ export default function HabitTracker() {
               className="gap-2"
             >
               <Settings className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              title={viewMode === 'list' ? 'Switch to grid view' : 'Switch to list view'}
+            >
+              {viewMode === 'list' ? <LayoutGrid className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
             </Button>
             <Button
               onClick={manualSave}
@@ -513,9 +566,9 @@ export default function HabitTracker() {
           )}
         </AnimatePresence>
 
-        <div className="space-y-4">
+        <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-4"}>
           {habits.length === 0 ? (
-            <Card className="p-12 text-center border-dashed">
+            <Card className="p-12 text-center border-dashed col-span-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                   <CalendarIcon className="w-6 h-6 text-muted-foreground" />
@@ -530,6 +583,102 @@ export default function HabitTracker() {
                 </div>
               </div>
             </Card>
+          ) : viewMode === 'grid' ? (
+            habits.map((habit) => (
+              <Card key={habit.id} className="group p-6 hover:shadow-md transition-all">
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-start justify-between">
+                    {editingHabitId === habit.id ? (
+                      <>
+                        <input
+                          type="text"
+                          value={editingHabitName}
+                          onChange={(e) => setEditingHabitName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveHabitName(habit.id)
+                            if (e.key === 'Escape') cancelEditingHabit()
+                          }}
+                          className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
+                          autoFocus
+                        />
+                        <div className="flex gap-0.5 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => saveHabitName(habit.id)}
+                            className="h-7 w-7"
+                            title="Save"
+                          >
+                            <Save className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={cancelEditingHabit}
+                            className="h-7 w-7"
+                            title="Cancel"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-lg font-semibold">{habit.name}</h3>
+                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => startEditingHabit(habit.id, habit.name)}
+                            className="h-7 w-7"
+                            title="Edit name"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeHabit(habit.id)}
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
+                    className={cn(
+                      "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                      showStreak[habit.id]
+                        ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                        : "hover:bg-muted/50"
+                    )}
+                    title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
+                  >
+                    <span className={cn(
+                      "text-3xl font-bold",
+                      showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+                    )}>
+                      {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {showStreak[habit.id]
+                        ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
+                        : getCompletedDays(habit) === 1 ? "day" : "days"}
+                    </span>
+                  </button>
+
+                  {getEarliestCompletedDate(habit) && (
+                    <p className="text-xs text-muted-foreground">
+                      Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
+                    </p>
+                  )}
+                </div>
+              </Card>
+            ))
           ) : (
             habits.map((habit) => (
               <Card key={habit.id} className="group p-6 hover:shadow-md transition-all">
