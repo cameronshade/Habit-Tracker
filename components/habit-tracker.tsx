@@ -1013,24 +1013,30 @@ export default function HabitTracker() {
                   <CheckCircle2 className="h-4 w-4" />
                   Check-In
                 </Button>
-                <Button
-                  onClick={() => setShowSettings(!showSettings)}
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                >
-                  <Settings className="h-4 w-4" />
-                  Preferences
-                </Button>
-                <Button
-                  onClick={() => setReorderMode(!reorderMode)}
-                  variant={reorderMode ? "default" : "outline"}
-                  size="sm"
-                  className="gap-2"
-                >
-                  <GripVertical className="h-4 w-4" />
-                  {reorderMode ? "Done" : "Reorder"}
-                </Button>
+                {mounted && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                      >
+                        <Settings className="h-4 w-4" />
+                        Preferences
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setShowSettings(!showSettings)}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        Color Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setReorderMode(!reorderMode)}>
+                        <GripVertical className="h-4 w-4 mr-2" />
+                        {reorderMode ? "Exit Reorder" : "Reorder Habits"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </>
             )}
             {mounted && (
@@ -1105,8 +1111,11 @@ export default function HabitTracker() {
               style={{ overflow: "hidden" }}
             >
               <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Settings</h2>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-lg font-semibold">Color Settings</h2>
+                    <p className="text-sm text-muted-foreground">Customize your habit tracker appearance</p>
+                  </div>
                   <Button
                     onClick={() => setShowSettings(false)}
                     variant="ghost"
@@ -1116,44 +1125,67 @@ export default function HabitTracker() {
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <label className="text-sm font-medium">Completed square color:</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={completedColor}
-                        onChange={(e) => setCompletedColor(e.target.value)}
-                        className="h-10 w-20 rounded border border-input cursor-pointer"
-                      />
-                      <span className="text-sm text-muted-foreground font-mono">{completedColor}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCompletedColor("#18181b")}
-                      >
-                        Reset
-                      </Button>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium mb-3 block">Completed Square Color</label>
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <input
+                            type="color"
+                            value={completedColor}
+                            onChange={(e) => setCompletedColor(e.target.value)}
+                            className="h-12 w-12 rounded-md border-2 border-input cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex-1 flex items-center gap-3">
+                          <Input
+                            type="text"
+                            value={completedColor}
+                            onChange={(e) => setCompletedColor(e.target.value)}
+                            className="font-mono text-sm max-w-[120px]"
+                            placeholder="#000000"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCompletedColor("#18181b")}
+                          >
+                            Reset to Default
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Presets:</span>
-                      {[
-                        { name: "Black", color: "#18181b" },
-                        { name: "Blue", color: "#3b82f6" },
-                        { name: "Green", color: "#22c55e" },
-                        { name: "Purple", color: "#a855f7" },
-                        { name: "Red", color: "#ef4444" },
-                        { name: "Orange", color: "#f97316" },
-                        { name: "Pink", color: "#ec4899" },
-                      ].map((preset) => (
-                        <button
-                          key={preset.color}
-                          onClick={() => setCompletedColor(preset.color)}
-                          className="w-8 h-8 rounded border-2 border-input hover:scale-110 transition-transform"
-                          style={{ backgroundColor: preset.color }}
-                          title={preset.name}
-                        />
-                      ))}
+                    <div className="space-y-3">
+                      <label className="text-sm font-medium block">Color Presets</label>
+                      <div className="grid grid-cols-7 gap-2">
+                        {[
+                          { name: "Black", color: "#18181b" },
+                          { name: "Blue", color: "#3b82f6" },
+                          { name: "Green", color: "#22c55e" },
+                          { name: "Purple", color: "#a855f7" },
+                          { name: "Red", color: "#ef4444" },
+                          { name: "Orange", color: "#f97316" },
+                          { name: "Pink", color: "#ec4899" },
+                        ].map((preset) => (
+                          <Button
+                            key={preset.color}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCompletedColor(preset.color)}
+                            className={cn(
+                              "h-12 w-full p-0 border-2 hover:scale-105 transition-transform relative group",
+                              completedColor === preset.color && "ring-2 ring-primary ring-offset-2"
+                            )}
+                            style={{ backgroundColor: preset.color }}
+                            title={preset.name}
+                          >
+                            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-white bg-black/50 rounded">
+                              {preset.name}
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
