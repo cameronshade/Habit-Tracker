@@ -8,7 +8,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, RotateCcw } from "lucide-react"
+import { Download, Upload, Trash2, RotateCcw, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface DayStatus {
@@ -33,6 +33,8 @@ export default function HabitTracker() {
   const [newHabitName, setNewHabitName] = useState("")
   const [dateStoppedInput, setDateStoppedInput] = useState<Date | null>(null)
   const [showStreak, setShowStreak] = useState<{[key: string]: boolean}>({})
+  const [completedColor, setCompletedColor] = useState("#18181b") // zinc-900
+  const [showSettings, setShowSettings] = useState(false)
 
   // Generate dates for a full year (GitHub style)
   const generateDates = (habitStartDate: string, habitEndDate?: string) => {
@@ -222,6 +224,14 @@ export default function HabitTracker() {
           </div>
           <div className="flex gap-2">
             <Button
+              onClick={() => setShowSettings(!showSettings)}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button
               onClick={saveToFile}
               variant="outline"
               size="sm"
@@ -242,6 +252,53 @@ export default function HabitTracker() {
             </label>
           </div>
         </div>
+
+        {showSettings && (
+          <Card className="p-6 mb-6">
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Settings</h2>
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Completed square color:</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={completedColor}
+                    onChange={(e) => setCompletedColor(e.target.value)}
+                    className="h-10 w-20 rounded border border-input cursor-pointer"
+                  />
+                  <span className="text-sm text-muted-foreground font-mono">{completedColor}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCompletedColor("#18181b")}
+                  >
+                    Reset
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Presets:</span>
+                  {[
+                    { name: "Black", color: "#18181b" },
+                    { name: "Blue", color: "#3b82f6" },
+                    { name: "Green", color: "#22c55e" },
+                    { name: "Purple", color: "#a855f7" },
+                    { name: "Red", color: "#ef4444" },
+                    { name: "Orange", color: "#f97316" },
+                    { name: "Pink", color: "#ec4899" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.color}
+                      onClick={() => setCompletedColor(preset.color)}
+                      className="w-8 h-8 rounded border-2 border-input hover:scale-110 transition-transform"
+                      style={{ backgroundColor: preset.color }}
+                      title={preset.name}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <Card className="p-6 mb-6">
           <div className="flex flex-col md:flex-row gap-4">
@@ -419,11 +476,15 @@ export default function HabitTracker() {
                                       <button
                                         key={day.date}
                                         onClick={() => toggleDay(habit.id, day.date)}
+                                        style={day.completed ? {
+                                          backgroundColor: completedColor,
+                                          borderColor: completedColor,
+                                        } : undefined}
                                         className={`
-                                          w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110
+                                          w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110 border
                                           ${day.completed
-                                            ? 'bg-zinc-900 dark:bg-zinc-100 border border-zinc-800 dark:border-zinc-200'
-                                            : 'bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                                            ? ''
+                                            : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                                           }
                                           ${isToday ? 'ring-1 ring-zinc-400 dark:ring-zinc-600' : ''}
                                         `}
