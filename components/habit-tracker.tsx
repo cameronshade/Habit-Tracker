@@ -8,8 +8,9 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, RotateCcw, Settings, Save } from "lucide-react"
+import { Download, Upload, Trash2, RotateCcw, Settings, Save, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface DayStatus {
   date: string
@@ -26,6 +27,8 @@ interface Habit {
 
 interface HabitData {
   habits: Habit[]
+  completedColor?: string
+  showStreak?: {[key: string]: boolean}
 }
 
 export default function HabitTracker() {
@@ -36,11 +39,13 @@ export default function HabitTracker() {
   const [completedColor, setCompletedColor] = useState("#18181b") // zinc-900
   const [showSettings, setShowSettings] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [showNewHabitForm, setShowNewHabitForm] = useState(false)
 
   // Load data from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('habit-tracker-data')
     const savedColor = localStorage.getItem('habit-tracker-color')
+    const savedShowStreak = localStorage.getItem('habit-tracker-showStreak')
 
     if (saved) {
       try {
@@ -53,6 +58,14 @@ export default function HabitTracker() {
 
     if (savedColor) {
       setCompletedColor(savedColor)
+    }
+
+    if (savedShowStreak) {
+      try {
+        setShowStreak(JSON.parse(savedShowStreak))
+      } catch (error) {
+        console.error('Error loading showStreak:', error)
+      }
     }
   }, [])
 
@@ -67,6 +80,10 @@ export default function HabitTracker() {
   useEffect(() => {
     localStorage.setItem('habit-tracker-color', completedColor)
   }, [completedColor])
+
+  useEffect(() => {
+    localStorage.setItem('habit-tracker-showStreak', JSON.stringify(showStreak))
+  }, [showStreak])
 
   // Generate dates for a full year (GitHub style)
   const generateDates = (habitStartDate: string, habitEndDate?: string) => {
@@ -105,30 +122,32 @@ export default function HabitTracker() {
       }
     }
 
-    // Generate all days from the start Sunday to today using milliseconds
-    const startTime = startDate_calc.getTime()
-    const endTime = today.getTime()
-    const oneDay = 24 * 60 * 60 * 1000 // milliseconds in a day
+    // Generate all days from the start Sunday to today using date strings to avoid DST issues
+    let currentDate = new Date(startDate_calc)
+    currentDate.setHours(12, 0, 0, 0) // Use noon to avoid DST issues
 
-    for (let time = startTime; time <= endTime; time += oneDay) {
-      const currentDate = new Date(time)
-      currentDate.setHours(0, 0, 0, 0)
+    while (currentDate <= today) {
       const dateStr = currentDate.toISOString().split('T')[0]
 
-      // Skip if we've already seen this date (handles DST edge cases)
-      if (seenDates.has(dateStr)) continue
-      seenDates.add(dateStr)
+      // Skip if we've already seen this date
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr)
 
-      // Auto-complete days if they're within the habit's active range
-      let isCompleted = false
-      if (rangeStart && rangeEnd) {
-        isCompleted = currentDate >= rangeStart && currentDate <= rangeEnd
+        // Auto-complete days if they're within the habit's active range
+        let isCompleted = false
+        if (rangeStart && rangeEnd) {
+          const checkDate = new Date(dateStr)
+          isCompleted = checkDate >= rangeStart && checkDate <= rangeEnd
+        }
+
+        dates.push({
+          date: dateStr,
+          completed: isCompleted
+        })
       }
 
-      dates.push({
-        date: dateStr,
-        completed: isCompleted
-      })
+      // Move to next day by incrementing the date (not milliseconds)
+      currentDate.setDate(currentDate.getDate() + 1)
     }
 
     return dates
@@ -150,6 +169,13 @@ export default function HabitTracker() {
     setHabits([...habits, newHabit])
     setNewHabitName("")
     setDateStoppedInput(null)
+    setShowNewHabitForm(false)
+  }
+
+  const cancelNewHabit = () => {
+    setNewHabitName("")
+    setDateStoppedInput(null)
+    setShowNewHabitForm(false)
   }
 
   const removeHabit = (id: string) => {
@@ -185,11 +211,16 @@ export default function HabitTracker() {
   const manualSave = () => {
     localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
     localStorage.setItem('habit-tracker-color', completedColor)
+    localStorage.setItem('habit-tracker-showStreak', JSON.stringify(showStreak))
     setLastSaved(new Date())
   }
 
   const saveToFile = () => {
-    const data: HabitData = { habits }
+    const data: HabitData = {
+      habits,
+      completedColor,
+      showStreak
+    }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -210,6 +241,15 @@ export default function HabitTracker() {
       try {
         const data = JSON.parse(e.target?.result as string) as HabitData
         setHabits(data.habits)
+
+        // Restore preferences if they exist in the file (backward compatible)
+        if (data.completedColor) {
+          setCompletedColor(data.completedColor)
+        }
+        if (data.showStreak) {
+          setShowStreak(data.showStreak)
+        }
+
         // Reset input so the same file can be selected again
         event.target.value = ''
       } catch (error) {
@@ -269,6 +309,14 @@ export default function HabitTracker() {
           </div>
           <div className="flex gap-2">
             <Button
+              onClick={() => setShowNewHabitForm(!showNewHabitForm)}
+              size="sm"
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New Habit
+            </Button>
+            <Button
               onClick={() => setShowSettings(!showSettings)}
               variant="outline"
               size="sm"
@@ -307,85 +355,135 @@ export default function HabitTracker() {
           </div>
         </div>
 
-        {showSettings && (
-          <Card className="p-6 mb-6">
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold">Settings</h2>
-              <div className="space-y-3">
-                <label className="text-sm font-medium">Completed square color:</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={completedColor}
-                    onChange={(e) => setCompletedColor(e.target.value)}
-                    className="h-10 w-20 rounded border border-input cursor-pointer"
-                  />
-                  <span className="text-sm text-muted-foreground font-mono">{completedColor}</span>
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: "auto", marginBottom: "1.5rem" }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              style={{ overflow: "hidden" }}
+            >
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Settings</h2>
                   <Button
-                    variant="outline"
+                    onClick={() => setShowSettings(false)}
+                    variant="ghost"
                     size="sm"
-                    onClick={() => setCompletedColor("#18181b")}
+                    className="h-8 w-8 p-0"
                   >
-                    Reset
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Presets:</span>
-                  {[
-                    { name: "Black", color: "#18181b" },
-                    { name: "Blue", color: "#3b82f6" },
-                    { name: "Green", color: "#22c55e" },
-                    { name: "Purple", color: "#a855f7" },
-                    { name: "Red", color: "#ef4444" },
-                    { name: "Orange", color: "#f97316" },
-                    { name: "Pink", color: "#ec4899" },
-                  ].map((preset) => (
-                    <button
-                      key={preset.color}
-                      onClick={() => setCompletedColor(preset.color)}
-                      className="w-8 h-8 rounded border-2 border-input hover:scale-110 transition-transform"
-                      style={{ backgroundColor: preset.color }}
-                      title={preset.name}
-                    />
-                  ))}
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium">Completed square color:</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={completedColor}
+                        onChange={(e) => setCompletedColor(e.target.value)}
+                        className="h-10 w-20 rounded border border-input cursor-pointer"
+                      />
+                      <span className="text-sm text-muted-foreground font-mono">{completedColor}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCompletedColor("#18181b")}
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Presets:</span>
+                      {[
+                        { name: "Black", color: "#18181b" },
+                        { name: "Blue", color: "#3b82f6" },
+                        { name: "Green", color: "#22c55e" },
+                        { name: "Purple", color: "#a855f7" },
+                        { name: "Red", color: "#ef4444" },
+                        { name: "Orange", color: "#f97316" },
+                        { name: "Pink", color: "#ec4899" },
+                      ].map((preset) => (
+                        <button
+                          key={preset.color}
+                          onClick={() => setCompletedColor(preset.color)}
+                          className="w-8 h-8 rounded border-2 border-input hover:scale-110 transition-transform"
+                          style={{ backgroundColor: preset.color }}
+                          title={preset.name}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </Card>
-        )}
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <Card className="p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-2 block">Habit Name</label>
-              <Input
-                placeholder="e.g., Morning workout, Read for 30min..."
-                value={newHabitName}
-                onChange={(e) => setNewHabitName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addHabit()}
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-2 block">End Date (optional)</label>
-              <DatePicker
-                selected={dateStoppedInput}
-                onChange={(date: Date | null) => setDateStoppedInput(date || undefined)}
-                dateFormat="MMM d, yyyy"
-                placeholderText="Pick a date"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                wrapperClassName="w-full"
-              />
-            </div>
-            <div className="flex items-end">
-              <Button
-                onClick={addHabit}
-                className="w-full md:w-auto px-8"
-              >
-                Add Habit
-              </Button>
-            </div>
-          </div>
-        </Card>
+        <AnimatePresence>
+          {showNewHabitForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: "auto", marginBottom: "1.5rem" }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              style={{ overflow: "hidden" }}
+            >
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Add New Habit</h2>
+                  <Button
+                    onClick={cancelNewHabit}
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-2 block">Habit Name</label>
+                    <Input
+                      placeholder="e.g., Morning workout, Read for 30min..."
+                      value={newHabitName}
+                      onChange={(e) => setNewHabitName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addHabit()}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-2 block">End Date (optional)</label>
+                    <DatePicker
+                      selected={dateStoppedInput}
+                      onChange={(date: Date | null) => setDateStoppedInput(date)}
+                      dateFormat="MMM d, yyyy"
+                      placeholderText="Pick a date"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      wrapperClassName="w-full"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button
+                      onClick={cancelNewHabit}
+                      variant="outline"
+                      className="w-full md:w-auto px-6"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={addHabit}
+                      className="w-full md:w-auto px-8"
+                    >
+                      Add Habit
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="space-y-4">
           {habits.length === 0 ? (
