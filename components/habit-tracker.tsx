@@ -8,9 +8,26 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid } from "lucide-react"
+import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid, GripVertical } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface DayStatus {
   date: string
@@ -44,6 +61,14 @@ export default function HabitTracker() {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null)
   const [editingHabitName, setEditingHabitName] = useState("")
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [reorderMode, setReorderMode] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   // Load data from OPFS on mount
   useEffect(() => {
@@ -362,6 +387,248 @@ export default function HabitTracker() {
     return earliest.date
   }
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      setHabits((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id)
+        const newIndex = items.findIndex((item) => item.id === over.id)
+
+        return arrayMove(items, oldIndex, newIndex)
+      })
+    }
+  }
+
+  // Sortable Habit Card Component
+  const SortableHabitCard = ({ habit }: { habit: Habit }) => {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: habit.id })
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    }
+
+    return (
+      <Card
+        ref={setNodeRef}
+        style={style}
+        key={habit.id}
+        className={cn(
+          "group p-6 hover:shadow-md transition-all",
+          reorderMode && "cursor-grab active:cursor-grabbing",
+          isDragging && "shadow-2xl ring-2 ring-primary"
+        )}
+      >
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="lg:w-56 flex-shrink-0">
+            <div className="flex items-start justify-between mb-3">
+              {reorderMode && (
+                <div {...attributes} {...listeners} className="mr-2 cursor-grab active:cursor-grabbing">
+                  <GripVertical className="h-5 w-5 text-muted-foreground" />
+                </div>
+              )}
+              {editingHabitId === habit.id ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingHabitName}
+                    onChange={(e) => setEditingHabitName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveHabitName(habit.id)
+                      if (e.key === 'Escape') cancelEditingHabit()
+                    }}
+                    className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
+                    autoFocus
+                  />
+                  <div className="flex gap-0.5 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => saveHabitName(habit.id)}
+                      className="h-7 w-7"
+                      title="Save"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={cancelEditingHabit}
+                      className="h-7 w-7"
+                      title="Cancel"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-semibold">{habit.name}</h3>
+                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => startEditingHabit(habit.id, habit.name)}
+                      className="h-7 w-7"
+                      title="Edit name"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeHabit(habit.id)}
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
+                className={cn(
+                  "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                  showStreak[habit.id]
+                    ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                    : "hover:bg-muted/50"
+                )}
+                title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
+              >
+                <span className={cn(
+                  "text-3xl font-bold",
+                  showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+                )}>
+                  {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {showStreak[habit.id]
+                    ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
+                    : getCompletedDays(habit) === 1 ? "day" : "days"}
+                </span>
+              </button>
+
+              {getEarliestCompletedDate(habit) && (
+                <p className="text-xs text-muted-foreground">
+                  Since {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-x-auto">
+            <div className="w-full">
+              {/* GitHub-style contribution graph */}
+              <div className="flex gap-1 w-full">
+                {/* Day labels (Mon, Wed, Fri) - GitHub style */}
+                <div className="flex flex-col gap-[3px] justify-start pt-5 pr-2">
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Mon</div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Wed</div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Fri</div>
+                  <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                </div>
+
+                {/* Weeks grid */}
+                <div className="flex-1">
+                  {/* Month labels */}
+                  <div className="relative flex gap-[3px] mb-1 h-4">
+                    {(() => {
+                      const monthLabels: { month: string; weekIndex: number }[] = []
+                      let currentMonth = ''
+
+                      // Group days into weeks and track month changes
+                      for (let i = 0; i < habit.days.length; i += 7) {
+                        const weekStart = new Date(habit.days[i].date)
+                        const month = format(weekStart, 'MMM')
+                        const weekIndex = Math.floor(i / 7)
+
+                        if (month !== currentMonth) {
+                          monthLabels.push({ month, weekIndex })
+                          currentMonth = month
+                        }
+                      }
+
+                      return monthLabels.map((label, idx) => (
+                        <div
+                          key={idx}
+                          className="text-[9px] text-muted-foreground absolute"
+                          style={{
+                            left: `${label.weekIndex * 13}px`
+                          }}
+                        >
+                          {label.month}
+                        </div>
+                      ))
+                    })()}
+                  </div>
+
+                  {/* Contribution squares */}
+                  <div className="flex gap-[3px] w-full justify-between">
+                    {(() => {
+                      // Group days into weeks (columns)
+                      const weeks: DayStatus[][] = []
+                      for (let i = 0; i < habit.days.length; i += 7) {
+                        weeks.push(habit.days.slice(i, i + 7))
+                      }
+
+                      return weeks.map((week, weekIdx) => (
+                        <div key={weekIdx} className="flex flex-col gap-[3px] flex-1">
+                          {week.map((day, dayIdx) => {
+                            const date = new Date(day.date)
+                            const isToday = day.date === new Date().toISOString().split('T')[0]
+
+                            return (
+                              <button
+                                key={day.date}
+                                onClick={() => toggleDay(habit.id, day.date)}
+                                style={day.completed ? {
+                                  backgroundColor: completedColor,
+                                  borderColor: completedColor,
+                                } : undefined}
+                                className={`
+                                  w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110 border
+                                  ${day.completed
+                                    ? ''
+                                    : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                                  }
+                                  ${isToday ? 'ring-1 ring-zinc-400 dark:ring-zinc-600' : ''}
+                                `}
+                                title={`${date.toLocaleDateString()} - ${day.completed ? 'Completed' : 'Not completed'}`}
+                              />
+                            )
+                          })}
+                          {/* Fill remaining days in week with empty cells */}
+                          {Array.from({ length: 7 - week.length }).map((_, idx) => (
+                            <div key={`empty-${idx}`} className="w-full aspect-square max-w-[14px]" />
+                          ))}
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -404,6 +671,15 @@ export default function HabitTracker() {
               title={viewMode === 'list' ? 'Switch to grid view' : 'Switch to list view'}
             >
               {viewMode === 'list' ? <LayoutGrid className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
+            </Button>
+            <Button
+              onClick={() => setReorderMode(!reorderMode)}
+              variant={reorderMode ? "default" : "outline"}
+              size="sm"
+              className="gap-2"
+            >
+              <GripVertical className="h-4 w-4" />
+              {reorderMode ? "Done" : "Reorder"}
             </Button>
             <Button
               onClick={manualSave}
@@ -566,8 +842,18 @@ export default function HabitTracker() {
           )}
         </AnimatePresence>
 
-        <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-4"}>
-          {habits.length === 0 ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={habits.map(h => h.id)}
+            strategy={verticalListSortingStrategy}
+            disabled={!reorderMode || viewMode === 'grid'}
+          >
+            <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-4"}>
+              {habits.length === 0 ? (
             <Card className="p-12 text-center border-dashed col-span-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
@@ -681,203 +967,12 @@ export default function HabitTracker() {
             ))
           ) : (
             habits.map((habit) => (
-              <Card key={habit.id} className="group p-6 hover:shadow-md transition-all">
-                <div className="flex flex-col lg:flex-row gap-6">
-                  <div className="lg:w-56 flex-shrink-0">
-                    <div className="flex items-start justify-between mb-3">
-                      {editingHabitId === habit.id ? (
-                        <>
-                          <input
-                            type="text"
-                            value={editingHabitName}
-                            onChange={(e) => setEditingHabitName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveHabitName(habit.id)
-                              if (e.key === 'Escape') cancelEditingHabit()
-                            }}
-                            className="text-xl font-semibold bg-transparent border-none outline-none focus:outline-none p-0 flex-1 min-w-0"
-                            autoFocus
-                          />
-                          <div className="flex gap-0.5 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => saveHabitName(habit.id)}
-                              className="h-7 w-7"
-                              title="Save"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={cancelEditingHabit}
-                              className="h-7 w-7"
-                              title="Cancel"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <h3 className="text-xl font-semibold">{habit.name}</h3>
-                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => startEditingHabit(habit.id, habit.name)}
-                              className="h-7 w-7"
-                              title="Edit name"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeHabit(habit.id)}
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <button
-                        onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
-                        className={cn(
-                          "flex items-baseline gap-2 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
-                          showStreak[habit.id]
-                            ? "px-3 bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
-                            : "hover:bg-muted/50"
-                        )}
-                        title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
-                      >
-                        <span className={cn(
-                          "text-3xl font-bold",
-                          showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
-                        )}>
-                          {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {showStreak[habit.id]
-                            ? getCurrentStreak(habit) === 1 ? "day streak" : "day streak"
-                            : getCompletedDays(habit) === 1 ? "day" : "days"}
-                        </span>
-                      </button>
-
-                      {getEarliestCompletedDate(habit) && (
-                        <p className="text-xs text-muted-foreground">
-                          Started On {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-x-auto">
-                    <div className="w-full">
-                      {/* GitHub-style contribution graph */}
-                      <div className="flex gap-1 w-full">
-                        {/* Day labels (Mon, Wed, Fri) - GitHub style */}
-                        <div className="flex flex-col gap-[3px] justify-start pt-5 pr-2">
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Mon</div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Wed</div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Fri</div>
-                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
-                        </div>
-
-                        {/* Weeks grid */}
-                        <div className="flex-1">
-                          {/* Month labels */}
-                          <div className="relative flex gap-[3px] mb-1 h-4">
-                            {(() => {
-                              const monthLabels: { month: string; weekIndex: number }[] = []
-                              let currentMonth = ''
-
-                              // Group days into weeks and track month changes
-                              for (let i = 0; i < habit.days.length; i += 7) {
-                                const weekStart = new Date(habit.days[i].date)
-                                const month = format(weekStart, 'MMM')
-                                const weekIndex = Math.floor(i / 7)
-
-                                if (month !== currentMonth) {
-                                  monthLabels.push({ month, weekIndex })
-                                  currentMonth = month
-                                }
-                              }
-
-                              return monthLabels.map((label, idx) => (
-                                <div
-                                  key={idx}
-                                  className="text-[9px] text-muted-foreground absolute"
-                                  style={{
-                                    left: `${label.weekIndex * 13}px`
-                                  }}
-                                >
-                                  {label.month}
-                                </div>
-                              ))
-                            })()}
-                          </div>
-
-                          {/* Contribution squares */}
-                          <div className="flex gap-[3px] w-full justify-between">
-                            {(() => {
-                              // Group days into weeks (columns)
-                              const weeks: DayStatus[][] = []
-                              for (let i = 0; i < habit.days.length; i += 7) {
-                                weeks.push(habit.days.slice(i, i + 7))
-                              }
-
-                              return weeks.map((week, weekIdx) => (
-                                <div key={weekIdx} className="flex flex-col gap-[3px] flex-1">
-                                  {week.map((day, dayIdx) => {
-                                    const date = new Date(day.date)
-                                    const isToday = day.date === new Date().toISOString().split('T')[0]
-
-                                    return (
-                                      <button
-                                        key={day.date}
-                                        onClick={() => toggleDay(habit.id, day.date)}
-                                        style={day.completed ? {
-                                          backgroundColor: completedColor,
-                                          borderColor: completedColor,
-                                        } : undefined}
-                                        className={`
-                                          w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110 border
-                                          ${day.completed
-                                            ? ''
-                                            : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
-                                          }
-                                          ${isToday ? 'ring-1 ring-zinc-400 dark:ring-zinc-600' : ''}
-                                        `}
-                                        title={`${date.toLocaleDateString()} - ${day.completed ? 'Completed' : 'Not completed'}`}
-                                      />
-                                    )
-                                  })}
-                                  {/* Fill remaining days in week with empty cells */}
-                                  {Array.from({ length: 7 - week.length }).map((_, idx) => (
-                                    <div key={`empty-${idx}`} className="w-full aspect-square max-w-[14px]" />
-                                  ))}
-                                </div>
-                              ))
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
+              <SortableHabitCard key={habit.id} habit={habit} />
             ))
           )}
-        </div>
+            </div>
+          </SortableContext>
+        </DndContext>
 
         <div className="mt-8 text-center text-sm text-muted-foreground">
           <p>Click on any square to mark a day as complete. Your data is stored locally.</p>
