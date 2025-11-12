@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { format } from "date-fns"
 import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
@@ -8,9 +8,15 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid, GripVertical } from "lucide-react"
+import { Download, Upload, Trash2, Settings, Save, Plus, X, Pencil, LayoutList, LayoutGrid, GripVertical, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   DndContext,
   closestCenter,
@@ -62,6 +68,7 @@ export default function HabitTracker() {
   const [editingHabitName, setEditingHabitName] = useState("")
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [reorderMode, setReorderMode] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -795,34 +802,39 @@ export default function HabitTracker() {
               <GripVertical className="h-4 w-4" />
               {reorderMode ? "Done" : "Reorder"}
             </Button>
-            <Button
-              onClick={manualSave}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Save className="h-4 w-4" />
-              Save
-            </Button>
-            <Button
-              onClick={saveToFile}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-            <label className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 cursor-pointer">
-              <input
-                type="file"
-                accept=".json"
-                onChange={loadFromFile}
-                className="hidden"
-              />
-              <Upload className="h-4 w-4" />
-              Import
-            </label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  File
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={manualSave}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={saveToFile}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={loadFromFile}
+              className="hidden"
+            />
           </div>
         </div>
 
