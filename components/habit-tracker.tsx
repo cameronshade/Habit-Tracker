@@ -333,6 +333,125 @@ export default function HabitTracker() {
     URL.revokeObjectURL(url)
   }
 
+  const exportForAI = () => {
+    const now = new Date()
+    let output = `HABIT TRACKER EXPORT FOR AI ANALYSIS\n`
+    output += `Generated: ${format(now, 'do MMMM yyyy, h:mm a')}\n`
+    output += `\n${'='.repeat(60)}\n\n`
+
+    habits.forEach((habit, idx) => {
+      output += `HABIT ${idx + 1}: ${habit.name}\n`
+      output += `${'='.repeat(60)}\n\n`
+
+      // Stats
+      const totalCompleted = getCompletedDays(habit)
+      const currentStreak = getCurrentStreak(habit)
+      const earliestDate = getEarliestCompletedDate(habit)
+
+      output += `Summary:\n`
+      output += `- Total Completed Days: ${totalCompleted}\n`
+      output += `- Current Streak: ${currentStreak} days\n`
+      if (earliestDate) {
+        output += `- First Completed: ${format(new Date(earliestDate), 'do MMMM yyyy')}\n`
+      }
+      output += `\n`
+
+      // Generate full 2025 calendar and check completion
+      const calendar2025 = generate2025Calendar()
+      const completedDatesMap = new Map<string, boolean>()
+      habit.days.forEach(day => {
+        completedDatesMap.set(day.date, day.completed)
+      })
+
+      // Group consecutive dates
+      const completedRanges: { start: string; end: string }[] = []
+      const incompleteRanges: { start: string; end: string }[] = []
+
+      let currentRange: { start: string; end: string; completed: boolean } | null = null
+
+      calendar2025.forEach((day) => {
+        const isCompleted = completedDatesMap.get(day.date) || false
+
+        if (!currentRange) {
+          currentRange = { start: day.date, end: day.date, completed: isCompleted }
+        } else if (currentRange.completed === isCompleted) {
+          // Continue the range
+          currentRange.end = day.date
+        } else {
+          // Save the range and start a new one
+          if (currentRange.completed) {
+            completedRanges.push({ start: currentRange.start, end: currentRange.end })
+          } else {
+            incompleteRanges.push({ start: currentRange.start, end: currentRange.end })
+          }
+          currentRange = { start: day.date, end: day.date, completed: isCompleted }
+        }
+      })
+
+      // Save the last range
+      if (currentRange) {
+        if (currentRange.completed) {
+          completedRanges.push({ start: currentRange.start, end: currentRange.end })
+        } else {
+          incompleteRanges.push({ start: currentRange.start, end: currentRange.end })
+        }
+      }
+
+      // Output completed ranges
+      output += `Completed Periods:\n`
+      if (completedRanges.length === 0) {
+        output += `- No completed days\n`
+      } else {
+        completedRanges.forEach(range => {
+          const startDate = new Date(range.start)
+          const endDate = new Date(range.end)
+          const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+          if (range.start === range.end) {
+            output += `- Single day: ${format(startDate, 'do MMM yyyy')}\n`
+          } else {
+            output += `- ${format(startDate, 'do MMM yyyy')} to ${format(endDate, 'do MMM yyyy')} (${daysDiff} days)\n`
+          }
+        })
+      }
+
+      output += `\n`
+
+      // Output incomplete ranges (optional, could be verbose)
+      output += `Incomplete/Missed Periods:\n`
+      if (incompleteRanges.length === 0) {
+        output += `- No missed days (perfect completion!)\n`
+      } else {
+        incompleteRanges.forEach(range => {
+          const startDate = new Date(range.start)
+          const endDate = new Date(range.end)
+          const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+          if (range.start === range.end) {
+            output += `- Single day: ${format(startDate, 'do MMM yyyy')}\n`
+          } else {
+            output += `- ${format(startDate, 'do MMM yyyy')} to ${format(endDate, 'do MMM yyyy')} (${daysDiff} days)\n`
+          }
+        })
+      }
+
+      output += `\n${'='.repeat(60)}\n\n`
+    })
+
+    output += `END OF EXPORT\n`
+
+    // Download as .txt
+    const blob = new Blob([output], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `habit-tracker-ai-export-${format(now, 'yyyy-MM-dd-HHmm')}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const loadFromFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1059,6 +1178,10 @@ export default function HabitTracker() {
                   <DropdownMenuItem onClick={saveToFile}>
                     <Download className="h-4 w-4 mr-2" />
                     Export
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportForAI}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export for AI
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                     <Upload className="h-4 w-4 mr-2" />
