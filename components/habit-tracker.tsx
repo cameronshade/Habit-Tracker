@@ -290,6 +290,18 @@ export default function HabitTracker() {
     return streak
   }
 
+  const getEarliestCompletedDate = (habit: Habit) => {
+    const completedDays = habit.days.filter(d => d.completed)
+    if (completedDays.length === 0) return null
+
+    // Find the earliest date
+    const earliest = completedDays.reduce((earliest, day) => {
+      return day.date < earliest.date ? day : earliest
+    })
+
+    return earliest.date
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -454,7 +466,7 @@ export default function HabitTracker() {
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-sm font-medium mb-2 block">End Date (optional)</label>
+                    <label className="text-sm font-medium mb-2 block">Start Date</label>
                     <DatePicker
                       selected={dateStoppedInput}
                       onChange={(date: Date | null) => setDateStoppedInput(date)}
@@ -552,9 +564,9 @@ export default function HabitTracker() {
                         </span>
                       </button>
 
-                      {habit.dateStopped && (
+                      {getEarliestCompletedDate(habit) && (
                         <p className="text-xs text-muted-foreground">
-                          Since {format(new Date(habit.dateStopped), 'do MMMM yyyy')}
+                          Started On {format(new Date(getEarliestCompletedDate(habit)!), 'do MMMM yyyy')}
                         </p>
                       )}
                     </div>
