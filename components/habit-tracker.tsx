@@ -8,7 +8,7 @@ import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Download, Upload, Trash2, RotateCcw, Settings } from "lucide-react"
+import { Download, Upload, Trash2, RotateCcw, Settings, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface DayStatus {
@@ -35,6 +35,38 @@ export default function HabitTracker() {
   const [showStreak, setShowStreak] = useState<{[key: string]: boolean}>({})
   const [completedColor, setCompletedColor] = useState("#18181b") // zinc-900
   const [showSettings, setShowSettings] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('habit-tracker-data')
+    const savedColor = localStorage.getItem('habit-tracker-color')
+
+    if (saved) {
+      try {
+        const data = JSON.parse(saved) as HabitData
+        setHabits(data.habits)
+      } catch (error) {
+        console.error('Error loading saved data:', error)
+      }
+    }
+
+    if (savedColor) {
+      setCompletedColor(savedColor)
+    }
+  }, [])
+
+  // Auto-save to localStorage when habits or color changes
+  useEffect(() => {
+    if (habits.length > 0) {
+      localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
+      setLastSaved(new Date())
+    }
+  }, [habits])
+
+  useEffect(() => {
+    localStorage.setItem('habit-tracker-color', completedColor)
+  }, [completedColor])
 
   // Generate dates for a full year (GitHub style)
   const generateDates = (habitStartDate: string, habitEndDate?: string) => {
@@ -150,6 +182,12 @@ export default function HabitTracker() {
     }))
   }
 
+  const manualSave = () => {
+    localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
+    localStorage.setItem('habit-tracker-color', completedColor)
+    setLastSaved(new Date())
+  }
+
   const saveToFile = () => {
     const data: HabitData = { habits }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -220,7 +258,14 @@ export default function HabitTracker() {
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
               Progress Tracker
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">Build better habits, one day at a time</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-muted-foreground text-sm">Build better habits, one day at a time</p>
+              {lastSaved && (
+                <span className="text-xs text-muted-foreground">
+                  • Saved {lastSaved.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button
@@ -230,6 +275,15 @@ export default function HabitTracker() {
               className="gap-2"
             >
               <Settings className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={manualSave}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <Save className="h-4 w-4" />
+              Save
             </Button>
             <Button
               onClick={saveToFile}
