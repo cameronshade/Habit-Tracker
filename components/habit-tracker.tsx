@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { format } from "date-fns"
+import DatePicker from "react-datepicker"
+import "react-datepicker/dist/react-datepicker.css"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Download, Upload, Trash2, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -31,33 +31,14 @@ interface HabitData {
 export default function HabitTracker() {
   const [habits, setHabits] = useState<Habit[]>([])
   const [newHabitName, setNewHabitName] = useState("")
-  const [dateStoppedInput, setDateStoppedInput] = useState<Date | undefined>(undefined)
-  const [mounted, setMounted] = useState(false)
-
-  // Load from localStorage on mount
-  useEffect(() => {
-    setMounted(true)
-    const saved = localStorage.getItem('habit-tracker-data')
-    if (saved) {
-      try {
-        const data = JSON.parse(saved) as HabitData
-        setHabits(data.habits)
-      } catch (error) {
-        console.error('Error loading saved data:', error)
-      }
-    }
-  }, [])
-
-  // Save to localStorage whenever habits change
-  useEffect(() => {
-    if (habits.length > 0) {
-      localStorage.setItem('habit-tracker-data', JSON.stringify({ habits }))
-    }
-  }, [habits])
+  const [dateStoppedInput, setDateStoppedInput] = useState<Date | null>(null)
+  const [showStreak, setShowStreak] = useState<{[key: string]: boolean}>({})
 
   // Generate dates for a full year (GitHub style)
-  const generateDates = (startDate: string, endDate?: string) => {
+  const generateDates = (habitStartDate: string, habitEndDate?: string) => {
     const dates: DayStatus[] = []
+    const seenDates = new Set<string>()
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -71,11 +52,48 @@ export default function HabitTracker() {
     const startDate_calc = new Date(oneYearAgo)
     startDate_calc.setDate(oneYearAgo.getDate() - dayOfWeek)
 
-    // Generate all days from the start Sunday to today
-    for (let d = new Date(startDate_calc); d <= today; d.setDate(d.getDate() + 1)) {
+    // Parse the end date if provided
+    let rangeStart: Date | null = null
+    let rangeEnd: Date | null = null
+
+    if (habitEndDate) {
+      const stoppedDate = new Date(habitEndDate)
+      stoppedDate.setHours(0, 0, 0, 0)
+
+      // If stopped date is in the past or today, mark from stopped date to today
+      // If stopped date is in the future, mark from today to stopped date
+      if (stoppedDate <= today) {
+        rangeStart = stoppedDate
+        rangeEnd = today
+      } else {
+        rangeStart = today
+        rangeEnd = stoppedDate
+      }
+    }
+
+    // Generate all days from the start Sunday to today using milliseconds
+    const startTime = startDate_calc.getTime()
+    const endTime = today.getTime()
+    const oneDay = 24 * 60 * 60 * 1000 // milliseconds in a day
+
+    for (let time = startTime; time <= endTime; time += oneDay) {
+      const currentDate = new Date(time)
+      currentDate.setHours(0, 0, 0, 0)
+      const dateStr = currentDate.toISOString().split('T')[0]
+
+      // Skip if we've already seen this date (handles DST edge cases)
+      if (seenDates.has(dateStr)) continue
+      seenDates.add(dateStr)
+
+      // Auto-complete days if they're within the habit's active range
+      let isCompleted = false
+      if (rangeStart && rangeEnd) {
+        isCompleted = currentDate >= rangeStart && currentDate <= rangeEnd
+      }
+
       dates.push({
-        date: d.toISOString().split('T')[0],
-        completed: false
+        date: dateStr,
+        completed: isCompleted
       })
     }
 
@@ -97,7 +115,7 @@ export default function HabitTracker() {
 
     setHabits([...habits, newHabit])
     setNewHabitName("")
-    setDateStoppedInput(undefined)
+    setDateStoppedInput(null)
   }
 
   const removeHabit = (id: string) => {
@@ -152,8 +170,12 @@ export default function HabitTracker() {
       try {
         const data = JSON.parse(e.target?.result as string) as HabitData
         setHabits(data.habits)
+        // Reset input so the same file can be selected again
+        event.target.value = ''
       } catch (error) {
         alert('Error loading file. Please ensure it\'s a valid habit tracker file.')
+        // Reset input on error too
+        event.target.value = ''
       }
     }
     reader.readAsText(file)
@@ -161,6 +183,31 @@ export default function HabitTracker() {
 
   const getCompletedDays = (habit: Habit) => {
     return habit.days.filter(d => d.completed).length
+  }
+
+  const getCurrentStreak = (habit: Habit) => {
+    let streak = 0
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Start from today and count backwards
+    for (let i = habit.days.length - 1; i >= 0; i--) {
+      const day = habit.days[i]
+      const dayDate = new Date(day.date)
+      dayDate.setHours(0, 0, 0, 0)
+
+      // Only count up to today
+      if (dayDate > today) continue
+
+      if (day.completed) {
+        streak++
+      } else {
+        // Break the streak if we find an incomplete day
+        break
+      }
+    }
+
+    return streak
   }
 
   return (
@@ -183,19 +230,15 @@ export default function HabitTracker() {
               <Download className="h-4 w-4" />
               Export
             </Button>
-            <label>
+            <label className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 cursor-pointer">
               <input
                 type="file"
                 accept=".json"
                 onChange={loadFromFile}
                 className="hidden"
               />
-              <Button variant="outline" size="sm" className="gap-2" asChild>
-                <span className="cursor-pointer">
-                  <Upload className="h-4 w-4" />
-                  Import
-                </span>
-              </Button>
+              <Upload className="h-4 w-4" />
+              Import
             </label>
           </div>
         </div>
@@ -213,39 +256,14 @@ export default function HabitTracker() {
             </div>
             <div className="flex-1">
               <label className="text-sm font-medium mb-2 block">End Date (optional)</label>
-              {mounted ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !dateStoppedInput && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateStoppedInput ? format(dateStoppedInput, "PPP") : <span>Pick a date</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={dateStoppedInput}
-                      onSelect={setDateStoppedInput}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                <Button
-                  variant="outline"
-                  disabled
-                  className="w-full justify-start text-left font-normal text-muted-foreground"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  <span>Pick a date</span>
-                </Button>
-              )}
+              <DatePicker
+                selected={dateStoppedInput}
+                onChange={(date: Date | null) => setDateStoppedInput(date || undefined)}
+                dateFormat="MMM d, yyyy"
+                placeholderText="Pick a date"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                wrapperClassName="w-full"
+              />
             </div>
             <div className="flex items-end">
               <Button
@@ -304,40 +322,52 @@ export default function HabitTracker() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold">
-                          {getCompletedDays(habit)}
+                      <button
+                        onClick={() => setShowStreak({...showStreak, [habit.id]: !showStreak[habit.id]})}
+                        className={cn(
+                          "flex items-baseline gap-2 px-3 py-2 rounded-lg transition-all hover:scale-105 cursor-pointer",
+                          showStreak[habit.id]
+                            ? "bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 shadow-sm shadow-orange-500/10"
+                            : "hover:bg-muted/50"
+                        )}
+                        title={showStreak[habit.id] ? "Click to show total days" : "Click to show current streak"}
+                      >
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          showStreak[habit.id] && "bg-gradient-to-br from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent"
+                        )}>
+                          {showStreak[habit.id] ? getCurrentStreak(habit) : getCompletedDays(habit)}
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          / {habit.days.length} days
+                          {showStreak[habit.id] ? "day streak" : "days"}
                         </span>
-                      </div>
+                      </button>
 
                       {habit.dateStopped && (
                         <p className="text-xs text-muted-foreground">
-                          Ended {new Date(habit.dateStopped).toLocaleDateString()}
+                          Since {format(new Date(habit.dateStopped), 'do MMMM yyyy')}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex-1 overflow-x-auto">
-                    <div className="inline-block">
+                    <div className="w-full">
                       {/* GitHub-style contribution graph */}
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 w-full">
                         {/* Day labels (Mon, Wed, Fri) - GitHub style */}
-                        <div className="flex flex-col gap-[3px] justify-start pt-5 pr-1">
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center">Mon</div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center">Wed</div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center"></div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center">Fri</div>
-                          <div className="h-[10px] text-[9px] text-muted-foreground flex items-center"></div>
+                        <div className="flex flex-col gap-[3px] justify-start pt-5 pr-2">
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Mon</div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Wed</div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center">Fri</div>
+                          <div className="h-[14px] max-h-[14px] text-[9px] text-muted-foreground flex items-center"></div>
                         </div>
 
                         {/* Weeks grid */}
-                        <div>
+                        <div className="flex-1">
                           {/* Month labels */}
                           <div className="relative flex gap-[3px] mb-1 h-4">
                             {(() => {
@@ -371,7 +401,7 @@ export default function HabitTracker() {
                           </div>
 
                           {/* Contribution squares */}
-                          <div className="flex gap-[3px]">
+                          <div className="flex gap-[3px] w-full justify-between">
                             {(() => {
                               // Group days into weeks (columns)
                               const weeks: DayStatus[][] = []
@@ -380,7 +410,7 @@ export default function HabitTracker() {
                               }
 
                               return weeks.map((week, weekIdx) => (
-                                <div key={weekIdx} className="flex flex-col gap-[3px]">
+                                <div key={weekIdx} className="flex flex-col gap-[3px] flex-1">
                                   {week.map((day, dayIdx) => {
                                     const date = new Date(day.date)
                                     const isToday = day.date === new Date().toISOString().split('T')[0]
@@ -390,7 +420,7 @@ export default function HabitTracker() {
                                         key={day.date}
                                         onClick={() => toggleDay(habit.id, day.date)}
                                         className={`
-                                          w-[10px] h-[10px] rounded-[2px] transition-all hover:scale-110
+                                          w-full aspect-square max-w-[14px] rounded-[2px] transition-all hover:scale-110
                                           ${day.completed
                                             ? 'bg-zinc-900 dark:bg-zinc-100 border border-zinc-800 dark:border-zinc-200'
                                             : 'bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
@@ -403,7 +433,7 @@ export default function HabitTracker() {
                                   })}
                                   {/* Fill remaining days in week with empty cells */}
                                   {Array.from({ length: 7 - week.length }).map((_, idx) => (
-                                    <div key={`empty-${idx}`} className="w-[10px] h-[10px]" />
+                                    <div key={`empty-${idx}`} className="w-full aspect-square max-w-[14px]" />
                                   ))}
                                 </div>
                               ))
