@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# personal habit data - never commit your personal tracking data!
+habit-tracker-data.json
+**/habit-tracker-data*.json
